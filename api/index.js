@@ -1,6 +1,6 @@
 // Load environment variables from the .env file
-require('dotenv').config();
 
+const config = require('../config');
 const express = require('express');
 const mysql = require('mysql2');
 const bodyParser = require('body-parser');
@@ -12,15 +12,16 @@ const port = process.env.PORT || 3000;
 app.use(cors());
 app.use(bodyParser.json());
 
-// Create a MySQL connection using environment variables
+// สร้างการเชื่อมต่อ MySQL โดยใช้ตัวแปรจาก config.js
 const db = mysql.createConnection({
-    host: process.env.DB_HOST,
-    user: process.env.DB_USER,
-    password: process.env.DB_PASSWORD,
-    database: process.env.DB_NAME,
-    port: process.env.DB_PORT 
+    host: config.DB_HOST,
+    user: config.DB_USER,
+    password: config.DB_PASSWORD,
+    database: config.DB_NAME,
+    port: config.DB_PORT
 });
 
+// ทดสอบการเชื่อมต่อ
 db.connect(err => {
     if (err) {
         console.error('Error connecting to MySQL:', err);
@@ -84,6 +85,30 @@ app.get('/hall-of-fame', (req, res) => {
             return res.status(500).send('Error retrieving Hall of Fame');
         }
         res.json(results);
+    });
+});
+
+// เพิ่ม API เพื่อดึงข้อมูลของผู้เล่นจาก wallet address
+app.post('/get-player-score', (req, res) => {
+    const { userAddress } = req.body;
+
+    if (!userAddress) {
+        return res.status(400).send('User address is required.');
+    }
+
+    const query = `SELECT userAddress, score FROM players WHERE userAddress = ?`;
+
+    db.query(query, [userAddress], (err, results) => {
+        if (err) {
+            console.error('Error retrieving player score:', err);
+            return res.status(500).send('Error retrieving player score.');
+        }
+
+        if (results.length > 0) {
+            res.json(results[0]); // ส่งผลลัพธ์เป็น json ของผู้เล่นที่ตรงกับ userAddress
+        } else {
+            res.status(404).send('Player not found.');
+        }
     });
 });
 
