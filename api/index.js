@@ -9,8 +9,17 @@ const cors = require('cors');
 const app = express();
 const port = process.env.PORT || 3000;
 
-// Middleware
-app.use(cors());
+// Configure CORS with specific allowed origin
+const corsOptions = {
+    origin: 'https://bored-topia-demo-game.vercel.app',  // Allow your frontend origin
+    methods: ['GET', 'POST'], // Allowed methods
+    allowedHeaders: ['Content-Type', 'Authorization'], // Allowed headers
+    credentials: true, // Allow cookies if needed
+};
+
+// Use CORS middleware
+app.use(cors(corsOptions));
+
 app.use(bodyParser.json());
 
 // Create MySQL pool to manage connections efficiently
@@ -145,31 +154,7 @@ app.post('/submit-score', async (req, res) => {
     }
 });
 
-app.post('/get-room-id', async (req, res) => {
-    const { userAddress } = req.body;
 
-    if (!userAddress) {
-        return res.status(400).json({ error: 'User address is required.' });
-    }
-
-    try {
-        const connection = await pool.getConnection();
-        const [result] = await connection.query(
-            'SELECT room_id FROM players_in_room WHERE userAddress = ?',
-            [userAddress]
-        );
-        connection.release();
-
-        if (result.length > 0) {
-            res.status(200).json({ roomId: result[0].room_id });
-        } else {
-            res.status(404).json({ error: 'Room not found.' });
-        }
-    } catch (error) {
-        console.error('Error fetching room ID:', error);
-        res.status(500).json({ error: 'Internal server error.' });
-    }
-});
 
 
 app.get('/leaderboard/:roomId', async (req, res) => {
@@ -194,12 +179,19 @@ app.get('/leaderboard/:roomId', async (req, res) => {
     }
 });
 
-// Endpoint to get the top 48 players for the Hall of Fame
-app.get('/hall-of-fame', async (req, res) => {
+// Endpoint to get the top players for a specific room in Hall of Fame
+app.get('/hall-of-fame/:roomId', async (req, res) => {
+    const { roomId } = req.params;
+
     try {
         const connection = await pool.getConnection();
         const [results] = await connection.query(
-            'SELECT userAddress, score FROM players ORDER BY score DESC LIMIT 48'
+            `SELECT p.userAddress, p.score 
+             FROM players p
+             JOIN players_in_room pir ON p.userAddress = pir.userAddress
+             WHERE pir.room_id = ?
+             ORDER BY p.score DESC LIMIT 48`, 
+             [roomId]
         );
 
         connection.release();
@@ -210,32 +202,8 @@ app.get('/hall-of-fame', async (req, res) => {
     }
 });
 
-// Endpoint to get a player's score based on wallet address
-app.post('/get-player-score', async (req, res) => {
-    const { userAddress } = req.body;
 
-    if (!userAddress) {
-        return res.status(400).send('User address is required.');
-    }
 
-    try {
-        const connection = await pool.getConnection();
-        const [results] = await connection.query(
-            'SELECT userAddress, score FROM players WHERE userAddress = ?',
-            [userAddress]
-        );
-
-        connection.release();
-        if (results.length > 0) {
-            res.json(results[0]);
-        } else {
-            res.status(404).send('Player not found.');
-        }
-    } catch (err) {
-        console.error('Error retrieving player score:', err);
-        res.status(500).send('Error retrieving player score.');
-    }
-});
 
 // Start the server
 app.listen(port, () => {
