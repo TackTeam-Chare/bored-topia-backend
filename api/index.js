@@ -116,7 +116,6 @@ app.post('/assign-room', async (req, res) => {
 });
 
 // Endpoint to submit a score
-// Endpoint to submit a score
 app.post('/submit-score', async (req, res) => {
     const { userAddress, score, tokenBalance } = req.body;
 
@@ -185,8 +184,6 @@ app.post('/submit-score', async (req, res) => {
     }
 });
 
-
-
 // ดึงข้อมูล Leaderboard พร้อมคำนวณโบนัส
 app.get('/leaderboard/:roomId', async (req, res) => {
     const { roomId } = req.params;
@@ -227,7 +224,6 @@ app.get('/leaderboard/:roomId', async (req, res) => {
         res.status(500).send('Error retrieving leaderboard.');
     }
 });
-
 
 // Endpoint to get the top players for a specific room in Hall of Fame
 app.get('/hall-of-fame/:roomId', async (req, res) => {
@@ -300,45 +296,57 @@ app.post('/check-user', async (req, res) => {
 });
 
 app.post('/submit-invite', async (req, res) => {
-    const { code } = req.body;
+    const { code, userAddress } = req.body; // รับ invite code และ userAddress จาก frontend
 
-    // Log เพื่อตรวจสอบว่าข้อมูลได้รับถูกต้อง
-    console.log(`Received invite code: ${code}`);
+    console.log(`Received invite code: ${code}, User: ${userAddress}`);
 
-    if (!code) {
-        console.error('No invite code provided.');
-        return res.status(400).json({ error: 'Invite code is required.' });
+    if (!code || !userAddress) {
+        console.error('Invite code or user address is missing.');
+        return res.status(400).json({ error: 'Invite code and user address are required.' });
     }
 
     try {
         const connection = await pool.getConnection();
 
-        // ตรวจสอบว่ามี inviteeAddress นี้อยู่แล้วหรือไม่
-        const [existing] = await connection.query(
-            'SELECT * FROM invitations WHERE inviteeAddress = ?',
+        // ตรวจสอบว่าโค้ดมีอยู่ในระบบหรือไม่ (จากตาราง valid_codes)
+        const [validCode] = await connection.query(
+            'SELECT * FROM valid_codes WHERE code = ?',
             [code]
         );
 
-        if (existing.length > 0) {
-            console.warn(`Invite code ${code} already used.`);
+        if (validCode.length === 0) {
+            console.warn(`Invite code ${code} is not valid.`);
             connection.release();
-            return res.status(400).json({ error: 'This invite code has already been used.' });
+            return res.status(400).json({ error: 'Invalid invite code.' });
+        }
+
+        // ตรวจสอบว่าผู้ใช้คนนี้เคยใช้โค้ดนี้ไปแล้วหรือไม่
+        const [existing] = await connection.query(
+            'SELECT * FROM invitations WHERE inviteeAddress = ? AND code = ?',
+            [userAddress, code]
+        );
+
+        if (existing.length > 0) {
+            console.warn(`User ${userAddress} has already used invite code ${code}.`);
+            connection.release();
+            return res.status(400).json({ error: 'This user has already used the invite code.' });
         }
 
         // บันทึกการเชิญใหม่
-        console.log(`Recording new invitation with code: ${code}`);
+        console.log(`Recording new invitation with code: ${code} for user: ${userAddress}`);
         await connection.execute(
-            'INSERT INTO invitations (inviterAddress, inviteeAddress) VALUES (?, ?)',
-            ['sample-inviter-address', code]
+            'INSERT INTO invitations (inviterAddress, inviteeAddress, code) VALUES (?, ?, ?)',
+            ['sample-inviter-address', userAddress, code]
         );
 
         connection.release();
         res.status(200).json({ message: 'Invitation recorded successfully.' });
     } catch (error) {
-        console.error('Error submitting invite code:', error); // Log ข้อผิดพลาด
+        console.error('Error submitting invite code:', error);
         res.status(500).json({ error: 'Error recording invitation.' });
     }
 });
+
 
 
 app.post('/apply-bonus', async (req, res) => {
@@ -393,7 +401,6 @@ app.post('/apply-bonus', async (req, res) => {
         res.status(500).json({ error: 'Error applying bonus.' });
     }
 });
-
 
 // Endpoint เพื่อดึงจำนวนเพื่อนที่ผู้ใช้เชิญ
 app.get('/invites-count/:userAddress', async (req, res) => {
