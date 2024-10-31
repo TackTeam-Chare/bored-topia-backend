@@ -295,7 +295,7 @@ app.post('/check-user', async (req, res) => {
     }
 });
 
-app.post('/submit-invite', async (req, res) => {
+app.post('/submit-invite', async (req, res) => { 
     const { code, userAddress } = req.body; // รับ invite code และ userAddress จาก frontend
 
     console.log(`Received invite code: ${code}, User: ${userAddress}`);
@@ -305,20 +305,29 @@ app.post('/submit-invite', async (req, res) => {
         return res.status(400).json({ error: 'Invite code and user address are required.' });
     }
 
+    // ตรวจสอบว่าโค้ดไม่ใช่โค้ดของตัวเอง
+    const lastSixOfAddress = userAddress.slice(-6);
+    if (code === lastSixOfAddress) {
+        console.warn(`Invite code ${code} is the same as user's own address suffix.`);
+        return res.status(400).json({ error: 'You cannot use your own address as an invite code.' });
+    }
+
     try {
         const connection = await pool.getConnection();
 
-        // ตรวจสอบว่าโค้ดมีอยู่ในระบบหรือไม่ (จากตาราง valid_codes)
-        const [validCode] = await connection.query(
-            'SELECT * FROM valid_codes WHERE code = ?',
+        // ตรวจสอบว่ามีผู้เล่นที่มี 6 ตัวท้ายของ userAddress ตรงกับ code หรือไม่
+        const [inviter] = await connection.query(
+            'SELECT * FROM players WHERE RIGHT(userAddress, 6) = ?',
             [code]
         );
 
-        if (validCode.length === 0) {
-            console.warn(`Invite code ${code} is not valid.`);
+        if (inviter.length === 0) {
+            console.warn(`Invite code ${code} does not match any user address.`);
             connection.release();
             return res.status(400).json({ error: 'Invalid invite code.' });
         }
+
+        const inviterAddress = inviter[0].userAddress;
 
         // ตรวจสอบว่าผู้ใช้คนนี้เคยใช้โค้ดนี้ไปแล้วหรือไม่
         const [existing] = await connection.query(
@@ -332,11 +341,18 @@ app.post('/submit-invite', async (req, res) => {
             return res.status(400).json({ error: 'This user has already used the invite code.' });
         }
 
+        // ตรวจสอบว่า inviterAddress และ inviteeAddress ไม่เหมือนกัน (ไม่ให้เชิญตัวเอง)
+        if (inviterAddress === userAddress) {
+            console.warn(`User ${userAddress} is attempting to invite themselves.`);
+            connection.release();
+            return res.status(400).json({ error: 'You cannot invite yourself.' });
+        }
+
         // บันทึกการเชิญใหม่
         console.log(`Recording new invitation with code: ${code} for user: ${userAddress}`);
         await connection.execute(
             'INSERT INTO invitations (inviterAddress, inviteeAddress, code) VALUES (?, ?, ?)',
-            ['sample-inviter-address', userAddress, code]
+            [inviterAddress, userAddress, code]
         );
 
         connection.release();
