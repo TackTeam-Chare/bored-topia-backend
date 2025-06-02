@@ -11,7 +11,7 @@ const port = process.env.PORT || 3000;
 
 // Configure CORS with specific allowed origin
 const allowedOrigins = [
-    'https://bored-topia-demo-game.vercel.app',
+    'https://bored-topia-demo-game-three.vercel.app',
     'http://localhost:5173'
 ];
 
